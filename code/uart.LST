@@ -1,0 +1,108 @@
+C51 COMPILER V9.05   UART                                                                  09/11/2020 16:06:57 PAGE 1   
+
+
+C51 COMPILER V9.05, COMPILATION OF MODULE UART
+OBJECT MODULE PLACED IN uart.OBJ
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE uart.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include "uart.h"
+   2          #include "string.h"
+   3          #include "modbus.h"
+   4          
+   5          
+   6          bit rx_end = 0;
+   7          
+   8          unsigned char rx_sta = 0;
+   9          unsigned char rx_len = 0;
+  10          unsigned char rx_buf[20] = 0;
+  11          
+  12          
+  13          void SendOneByte(unsigned char c)
+  14          {
+  15   1          SBUF = c;
+  16   1          while(!TI);
+  17   1          TI = 0;
+  18   1      }
+  19          
+  20          void SendString(char *s)
+  21          {
+  22   1          while (*s)                  //检测字符串结束标志
+  23   1          {
+  24   2              SendOneByte(*s++);         //发送当前字符
+  25   2          }
+  26   1      }
+  27          
+  28          void InitUART(void)   //12M,4800bps
+  29          {
+  30   1          TMOD = TMOD | 0x20;
+  31   1          SCON = 0x50;
+  32   1          TH1 = 0xF3;
+  33   1          TL1 = TH1;
+  34   1          PCON = 0x80;
+  35   1          EA = 1;
+  36   1          ES = 1;
+  37   1          TR1 = 1;
+  38   1          IP= IP | 0x10;
+  39   1        
+  40   1          modbus_init(1);
+  41   1      }
+  42          
+  43          void UART_IDLE(void)
+  44          {
+  45   1        if(rx_sta != 0)
+  46   1        {
+  47   2            rx_sta++;
+  48   2          if(rx_sta >= 3)
+  49   2          {
+  50   3            rx_sta = 0;
+  51   3            rx_end = 1;
+  52   3          }
+  53   2        }
+  54   1        UART_handle();
+  55   1      }
+C51 COMPILER V9.05   UART                                                                  09/11/2020 16:06:57 PAGE 2   
+
+  56          void UART_handle(void)
+  57          {
+  58   1        if(rx_end == 1)
+  59   1        {
+  60   2      //    SendString(rx_buf);
+  61   2          modbus_handle(rx_buf,rx_len);
+  62   2          memset(rx_buf,0,rx_len);
+  63   2          rx_len = 0;
+  64   2          rx_end = 0;
+  65   2        }
+  66   1      }
+  67          
+  68          void UARTInterrupt(void) interrupt 4
+  69          {
+  70   1          if(RI)
+  71   1          {
+  72   2            RI = 0;
+  73   2            if(rx_end == 0)
+  74   2            {
+  75   3              rx_sta = 1;
+  76   3              rx_buf[rx_len] = SBUF;
+  77   3              rx_len++;
+  78   3            }
+  79   2          }
+  80   1          else
+  81   1              TI = 0;
+  82   1      }
+  83          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    170    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     22       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

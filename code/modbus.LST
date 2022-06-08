@@ -1,0 +1,301 @@
+C51 COMPILER V9.05   MODBUS                                                                09/11/2020 16:06:57 PAGE 1   
+
+
+C51 COMPILER V9.05, COMPILATION OF MODULE MODBUS
+OBJECT MODULE PLACED IN modbus.OBJ
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE modbus.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include "modbus.h"
+   2          #include "uart.h"
+   3          
+   4          
+   5          uint8_t mod_addr = 0;
+   6          uint8_t mod_buf[11];
+   7          
+   8          void modbus_init(uint8_t addr)
+   9          {
+  10   1        mod_addr = addr;
+  11   1      }
+  12          
+  13          void modbus_handle(uint8_t* rx,uint8_t len)
+  14          {
+  15   1        uint16_t start_addr,regnum; //crc,crcin;
+  16   1        
+  17   1        uint8_t arr_len=0;
+  18   1        
+  19   1      //  if(rx[0] == 0xaa)
+  20   1      //  {
+  21   1      //    if(rx[1] == 0x55)
+  22   1      //    {
+  23   1      //      mod_addr = rx[2];
+  24   1      ////      flash_write(mod_addr);
+  25   1      //      tx_buf[0]=0x55;
+  26   1      //      tx_buf[1] = 0xaa;
+  27   1      //      rs485_send(tx_buf,2);
+  28   1      //      return;
+  29   1      //    }
+  30   1      //  }
+  31   1        
+  32   1        if(rx[0] != mod_addr)
+  33   1        {
+  34   2          arr_len=0;
+  35   2          mod_buf[arr_len++] = 0xaa;
+  36   2          mod_buf[arr_len++] = ADDR_ERR;
+  37   2          mod_buf[arr_len++] = 0x55;
+  38   2          modbus_send(mod_buf,arr_len++);
+  39   2          return;
+  40   2        }
+  41   1        
+  42   1      //  crcin = rx[len-2];
+  43   1      //  crcin = crcin << 8 | rx[len - 1];
+  44   1        
+  45   1        start_addr = rx[len-2];
+  46   1        start_addr = start_addr << 8 | rx[len - 1];
+  47   1      
+  48   1      
+  49   1        regnum = crc16bitbybit(rx,len-2);
+  50   1        regnum = regnum>>8 | regnum<<8;
+  51   1      
+  52   1        if(start_addr != regnum)
+  53   1        {
+  54   2          arr_len = 0;
+  55   2          mod_buf[arr_len++] = 0xaa;
+C51 COMPILER V9.05   MODBUS                                                                09/11/2020 16:06:57 PAGE 2   
+
+  56   2      //    mod_buf[arr_len++] = len;
+  57   2      //    mod_buf[arr_len++] = rx[len-2];
+  58   2      //    mod_buf[arr_len++] = rx[len - 1];
+  59   2      //    
+  60   2          mod_buf[arr_len++] = CRC_ERR;
+  61   2      //    mod_buf[arr_len++] = crc >> 8;
+  62   2      //    mod_buf[arr_len++] = crc;   
+  63   2      //    mod_buf[arr_len++] = 0x55;
+  64   2          modbus_send(mod_buf,arr_len++);
+  65   2          return;
+  66   2        }
+  67   1        
+  68   1        arr_len = 0;
+  69   1        mod_buf[arr_len++] = mod_addr;
+  70   1        mod_buf[arr_len++] = rx[1];
+  71   1        if(rx[1] == 3)
+  72   1        {
+  73   2          start_addr = rx[2];
+  74   2          start_addr = start_addr << 8 | rx[3];
+  75   2          
+  76   2          regnum = rx[4];
+  77   2          regnum = regnum <<8 | rx[5];
+  78   2          
+  79   2      //    mod_buf[arr_len++] = regnum*2;
+  80   2          
+  81   2      //    for(crc= start_addr*2 ; crc<(start_addr*2+regnum*2); crc++)
+  82   2      //    {
+  83   2      //      mod_buf[arr_len++] = 0;//data_buf[crc];
+  84   2      //    }
+  85   2          
+  86   2          if(start_addr == 0)
+  87   2          {
+  88   3            if(regnum == 1)
+  89   3            {
+  90   4              mod_buf[arr_len++] = 2;
+  91   4              start_addr = s1*10+s2;
+  92   4              mod_buf[arr_len++] = start_addr>>8;
+  93   4              mod_buf[arr_len++] = start_addr;
+  94   4            }
+  95   3            if(regnum == 2)
+  96   3            {
+  97   4              mod_buf[arr_len++] = 4;
+  98   4              start_addr = s1*10+s2;
+  99   4              mod_buf[arr_len++] = start_addr>>8;
+ 100   4              mod_buf[arr_len++] = start_addr;
+ 101   4              start_addr = w1*10+w2;
+ 102   4              mod_buf[arr_len++] = start_addr>>8;
+ 103   4              mod_buf[arr_len++] = start_addr;
+ 104   4            }
+ 105   3          }
+ 106   2          else if(start_addr == 1)
+ 107   2          {
+ 108   3              mod_buf[arr_len++] = 2;
+ 109   3              start_addr = w1*10+w2;
+ 110   3              mod_buf[arr_len++] = start_addr>>8;
+ 111   3              mod_buf[arr_len++] = start_addr;
+ 112   3          }
+ 113   2          
+ 114   2          start_addr = crc16bitbybit(mod_buf,arr_len);
+ 115   2          mod_buf[arr_len++] = start_addr;
+ 116   2          mod_buf[arr_len++] = start_addr>>8;
+ 117   2          
+C51 COMPILER V9.05   MODBUS                                                                09/11/2020 16:06:57 PAGE 3   
+
+ 118   2      //    for(start_addr=0; start_addr<8; start_addr++)
+ 119   2      //    {
+ 120   2      //      mod_buf[start_addr] = start_addr;
+ 121   2      //    }
+ 122   2          
+ 123   2          modbus_send(mod_buf,arr_len++);
+ 124   2        }
+ 125   1        
+ 126   1      //  else if(rx[1] == 6)
+ 127   1      //  {
+ 128   1      //    start_addr = rx[2];
+ 129   1      //    start_addr = start_addr << 8 | rx[3];
+ 130   1      //        
+ 131   1      ////    data_buf[start_addr * 2] = rx[4];
+ 132   1      ////    data_buf[start_addr * 2 + 1] = rx[5];
+ 133   1      //    
+ 134   1      //    tx_buf[2] = rx[2];
+ 135   1      //    tx_buf[3] = rx[3];
+ 136   1      //    
+ 137   1      ////    tx_buf[4] = tx_buf[start_addr * 2];
+ 138   1      ////    tx_buf[5] = tx_buf[start_addr * 2 + 1];
+ 139   1      //    
+ 140   1      //    crc = crc16table(tx_buf,6);
+ 141   1      //    tx_buf[6] = crc;
+ 142   1      //    tx_buf[7] = crc>>8;
+ 143   1      //    modbus_send(tx_buf,8);
+ 144   1      //    
+ 145   1      ////    if(start_addr == 4)
+ 146   1      ////    {
+ 147   1      ////      mod_addr = data_buf[9];
+ 148   1      ////    }
+ 149   1      //  }
+ 150   1      }
+ 151           
+ 152          void modbus_send(uint8_t* rxbuf,uint8_t len)
+ 153          {
+ 154   1        unsigned char i;
+ 155   1        
+ 156   1        for(i=0; i<len; i++)
+ 157   1        {
+ 158   2          SendOneByte(rxbuf[i]);
+ 159   2        }
+ 160   1      }
+ 161           
+ 162          ///* Table of CRC values for high¨Corder byte */
+ 163          //const uint8_t xdata crctablehi[] = {
+ 164          //  0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+ 165          //  0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
+ 166          //  0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01,
+ 167          //  0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+ 168          //  0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81,
+ 169          //  0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0,
+ 170          //  0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01,
+ 171          //  0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+ 172          //  0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+ 173          //  0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
+ 174          //  0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01,
+ 175          //  0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+ 176          //  0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+ 177          //  0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
+ 178          //  0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01,
+ 179          //  0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+C51 COMPILER V9.05   MODBUS                                                                09/11/2020 16:06:57 PAGE 4   
+
+ 180          //  0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+ 181          //  0x40
+ 182          //};
+ 183          ///* Table of CRC values for low¨Corder byte */
+ 184          //const uint8_t xdata crctablelo[] = {
+ 185          //  0x00, 0xC0, 0xC1, 0x01, 0xC3, 0x03, 0x02, 0xC2, 0xC6, 0x06, 0x07, 0xC7, 0x05, 0xC5, 0xC4,
+ 186          //  0x04, 0xCC, 0x0C, 0x0D, 0xCD, 0x0F, 0xCF, 0xCE, 0x0E, 0x0A, 0xCA, 0xCB, 0x0B, 0xC9, 0x09,
+ 187          //  0x08, 0xC8, 0xD8, 0x18, 0x19, 0xD9, 0x1B, 0xDB, 0xDA, 0x1A, 0x1E, 0xDE, 0xDF, 0x1F, 0xDD,
+ 188          //  0x1D, 0x1C, 0xDC, 0x14, 0xD4, 0xD5, 0x15, 0xD7, 0x17, 0x16, 0xD6, 0xD2, 0x12, 0x13, 0xD3,
+ 189          //  0x11, 0xD1, 0xD0, 0x10, 0xF0, 0x30, 0x31, 0xF1, 0x33, 0xF3, 0xF2, 0x32, 0x36, 0xF6, 0xF7,
+ 190          //  0x37, 0xF5, 0x35, 0x34, 0xF4, 0x3C, 0xFC, 0xFD, 0x3D, 0xFF, 0x3F, 0x3E, 0xFE, 0xFA, 0x3A,
+ 191          //  0x3B, 0xFB, 0x39, 0xF9, 0xF8, 0x38, 0x28, 0xE8, 0xE9, 0x29, 0xEB, 0x2B, 0x2A, 0xEA, 0xEE,
+ 192          //  0x2E, 0x2F, 0xEF, 0x2D, 0xED, 0xEC, 0x2C, 0xE4, 0x24, 0x25, 0xE5, 0x27, 0xE7, 0xE6, 0x26,
+ 193          //  0x22, 0xE2, 0xE3, 0x23, 0xE1, 0x21, 0x20, 0xE0, 0xA0, 0x60, 0x61, 0xA1, 0x63, 0xA3, 0xA2,
+ 194          //  0x62, 0x66, 0xA6, 0xA7, 0x67, 0xA5, 0x65, 0x64, 0xA4, 0x6C, 0xAC, 0xAD, 0x6D, 0xAF, 0x6F,
+ 195          //  0x6E, 0xAE, 0xAA, 0x6A, 0x6B, 0xAB, 0x69, 0xA9, 0xA8, 0x68, 0x78, 0xB8, 0xB9, 0x79, 0xBB,
+ 196          //  0x7B, 0x7A, 0xBA, 0xBE, 0x7E, 0x7F, 0xBF, 0x7D, 0xBD, 0xBC, 0x7C, 0xB4, 0x74, 0x75, 0xB5,
+ 197          //  0x77, 0xB7, 0xB6, 0x76, 0x72, 0xB2, 0xB3, 0x73, 0xB1, 0x71, 0x70, 0xB0, 0x50, 0x90, 0x91,
+ 198          //  0x51, 0x93, 0x53, 0x52, 0x92, 0x96, 0x56, 0x57, 0x97, 0x55, 0x95, 0x94, 0x54, 0x9C, 0x5C,
+ 199          //  0x5D, 0x9D, 0x5F, 0x9F, 0x9E, 0x5E, 0x5A, 0x9A, 0x9B, 0x5B, 0x99, 0x59, 0x58, 0x98, 0x88,
+ 200          //  0x48, 0x49, 0x89, 0x4B, 0x8B, 0x8A, 0x4A, 0x4E, 0x8E, 0x8F, 0x4F, 0x8D, 0x4D, 0x4C, 0x8C,
+ 201          //  0x44, 0x84, 0x85, 0x45, 0x87, 0x47, 0x46, 0x86, 0x82, 0x42, 0x43, 0x83, 0x41, 0x81, 0x80,
+ 202          //  0x40
+ 203          //};
+ 204          // 
+ 205          //uint16_t crc16table(uint8_t *ptr, uint16_t len)
+ 206          //{
+ 207          //  uint8_t crchi = 0xff;
+ 208          //  uint8_t crclo = 0xff; 
+ 209          //  uint16_t index;
+ 210          //  while (len--) 
+ 211          //  {
+ 212          //    index = crclo ^ *ptr++; 
+ 213          //    crclo = crchi ^ crctablehi[index];
+ 214          //    crchi = crctablelo[index];
+ 215          //  }
+ 216          //  return (crchi << 8 | crclo);
+ 217          //}
+ 218          
+ 219          //const code uint16_t polynom = 0xA001;
+ 220          
+ 221          #define polynom 0xA001
+ 222          
+ 223          uint16_t crc16bitbybit(uint8_t *ptr, uint16_t len)
+ 224          {
+ 225   1        uint8_t i;
+ 226   1        uint16_t crc = 0xffff;
+ 227   1       
+ 228   1        if (len == 0) {
+ 229   2          len = 1;
+ 230   2        }
+ 231   1        while (len--) {
+ 232   2          crc ^= *ptr;
+ 233   2          for (i = 0; i<8; i++)
+ 234   2          {
+ 235   3            if (crc & 1) {
+ 236   4              crc >>= 1;
+ 237   4              crc ^= polynom;
+ 238   4            }
+ 239   3            else {
+ 240   4              crc >>= 1;
+ 241   4            }
+C51 COMPILER V9.05   MODBUS                                                                09/11/2020 16:06:57 PAGE 5   
+
+ 242   3          }
+ 243   2          ptr++;
+ 244   2        }
+ 245   1        return(crc);
+ 246   1      }
+ 247           
+ 248          //const uint16_t xdata crctalbeabs[] = { 
+ 249          //  0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401, 
+ 250          //  0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400 
+ 251          //};
+ 252          // 
+ 253          //uint16_t crc16tablefast(uint8_t *ptr, uint16_t len) 
+ 254          //{
+ 255          //  uint16_t crc = 0xffff; 
+ 256          //  uint16_t i;
+ 257          //  uint8_t ch;
+ 258          // 
+ 259          //  for (i = 0; i < len; i++) 
+ 260          //  {
+ 261          //    ch = *ptr++;
+ 262          //    crc = crctalbeabs[(ch ^ crc) & 15] ^ (crc >> 4);
+ 263          //    crc = crctalbeabs[((ch >> 4) ^ crc) & 15] ^ (crc >> 4);
+ 264          //  }
+ 265          //  
+ 266          //  return crc;
+ 267          //}
+ 268          
+ 269          
+ 270          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    652    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     12      18
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

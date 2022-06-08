@@ -1,0 +1,839 @@
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 1   
+
+
+C51 COMPILER V9.05, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: D:\Keil\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include<reg51.h> //加载头文件
+   2          #include<intrins.h>
+   3          
+   4          #include "uart.h"
+   5          
+   6          #define uchar unsigned char //宏定义
+   7          #define uint unsigned int
+   8          #define ulong unsigned long
+   9          #define LCD_START_ROW 0xc0  //起始行命令
+  10          #define LCD_PAGE 0xB8   //页指令
+  11          #define LCD_COL  0x40   //列指令
+  12          #define LCD_DATA P0       //液晶数据线端口DB0-DB7
+  13          sbit LCD_RS=P2^0;     //LCD液晶引脚定义
+  14          sbit LCD_RW=P2^1;
+  15          sbit LCD_E=P2^2;
+  16          sbit LCD_CS1=P2^3;
+  17          sbit LCD_CS2=P2^4;
+  18          sbit DIO=P2^5;    //DS1302数据线
+  19          sbit DCLK=P2^6;   //DS1302时钟线
+  20          sbit DRST=P2^7;   //DS1302复位线
+  21          sbit KEY_SET=P3^4;     //设置键
+  22          sbit KEY_JIA=P3^5;     //加1
+  23          sbit KEY_JIAN=P3^6;    //减1
+  24          sbit KEY_OUT=P3^7;     //退出
+  25          sbit JDQ1=P1^0;   //温度高于上限
+  26          sbit JDQ2=P1^1;   //温度低于下限
+  27          sbit JDQ3=P1^2;   //湿度高于上限
+  28          sbit JDQ4=P1^3;   //湿度低于下限
+  29          sbit LED=P1^5;    //LED报警接口
+  30          sbit SPK=P1^6;    //蜂鸣器报警接口
+  31          sbit DHT=P1^7;    //DHT11接口定义
+  32          uchar TempH=35,TempL=15;  //温度上下限
+  33          uchar HumiH=80,HumiL=50;  //湿度上下限
+  34          uchar s1,s2,w1,w2;  //湿度，温度变量
+  35          uchar TH_data,TL_data,RH_data,RL_data,CK_data;  //DHT11用变量
+  36          uchar TH_temp,TL_temp,RH_temp,RL_temp,CK_temp;
+  37          uchar com_data,untemp,temp;
+  38          uchar respond;
+  39          bit Reverse_Display=0;//是否反相显示（白底黑字/黑底白字）
+  40          char Adjust_Index=-1;  //当前调节的时间对象：秒，分，时，日，月，年（0，1，2，3，4，6）
+  41          uchar MonthsDays[]={0,31,0,31,30,31,30,31,31,30,31,30,31};   // 一年中每个月的天数，二月的天数由年份决定
+  42          uchar DateTime[7];//所读取的日期时间
+  43          
+  44          uchar tcount=0; //定时器用变量  
+  45          
+  46          uchar code TAB_16X16[]={  
+  47          //星期夜晚图标空设置年月日时分秒  
+  48          0x00,0x08,0xFF,0xA8,0xA8,0xA8,0xFF,0x08,0x00,0xFE,0x22,0x22,0x22,0xFF,0x02,0x00,
+  49          0x84,0x44,0x37,0x04,0x04,0x14,0xA7,0x44,0x24,0x1F,0x02,0x42,0x82,0x7F,0x00,0x00,//期，0
+  50          
+  51          0x00,0x00,0xBE,0x2A,0x2A,0x2A,0x2A,0xEA,0x2A,0x2A,0x2A,0x2A,0xBF,0x02,0x00,0x00,
+  52          0x48,0x44,0x4B,0x49,0x49,0x49,0x49,0x7F,0x49,0x49,0x49,0x4D,0x49,0x61,0x40,0x00,//星，1
+  53            
+  54          0xFF,0xFF,0xFF,0xFF,0xFD,0xFF,0xFD,0xFD,0xFD,0xFB,0xF3,0xC7,0x0F,0x1F,0xFF,0xFF,
+  55          0xFF,0xF7,0xEF,0xDF,0xDF,0xBF,0xBF,0xBF,0x9F,0xDF,0xCF,0xE3,0xF0,0xFC,0xFF,0xFF,//夜晚图标，2
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 2   
+
+  56          
+  57          0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+  58          0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,//空,3 
+  59          
+  60          0x40,0x40,0x42,0xCC,0x00,0x40,0xA0,0x9F,0x81,0x81,0x81,0x9F,0xA0,0x20,0x20,0x00,
+  61          0x00,0x00,0x00,0x7F,0xA0,0x90,0x40,0x43,0x2C,0x10,0x28,0x26,0x41,0xC0,0x40,0x00,//设，4
+  62          
+  63          0x00,0x10,0x17,0xD5,0x55,0x57,0x55,0x7D,0x55,0x57,0x55,0xD5,0x17,0x10,0x00,0x00,
+  64          0x40,0x40,0x40,0x7F,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x7F,0x40,0x60,0x40,0x00,//置，5
+  65          
+  66          0x00,0x20,0x10,0xCC,0x47,0x44,0x44,0xFC,0x44,0x44,0x44,0x64,0x46,0x04,0x00,0x00,
+  67          0x04,0x04,0x04,0x07,0x04,0x04,0x04,0xFF,0x04,0x04,0x04,0x04,0x04,0x06,0x04,0x00,//年，6
+  68          
+  69          0x00,0x00,0x00,0x00,0xFE,0x22,0x22,0x22,0x22,0x22,0x22,0xFF,0x02,0x00,0x00,0x00,
+  70          0x00,0x80,0x40,0x30,0x0F,0x02,0x02,0x02,0x02,0x42,0x82,0x7F,0x00,0x00,0x00,0x00,//月，7
+  71          
+  72          0x00,0x00,0x00,0xFE,0x82,0x82,0x82,0x82,0x82,0x82,0x82,0xFF,0x02,0x00,0x00,0x00,
+  73          0x00,0x00,0x00,0x7F,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x7F,0x00,0x00,0x00,0x00,//日，8
+  74          
+  75          0x00,0xFC,0x84,0x84,0x84,0xFE,0x14,0x10,0x90,0x10,0x10,0x10,0xFF,0x10,0x10,0x00,
+  76          0x00,0x3F,0x10,0x10,0x10,0x3F,0x00,0x00,0x00,0x23,0x40,0x80,0x7F,0x00,0x00,0x00,//时,9
+  77          
+  78          0x00,0x80,0x40,0x20,0x98,0x86,0x80,0x80,0x83,0x8C,0x90,0x20,0xC0,0x80,0x80,0x00,
+  79          0x01,0x00,0x80,0x40,0x20,0x1F,0x00,0x40,0x80,0x40,0x3F,0x00,0x00,0x01,0x00,0x00,//分，10
+  80          
+  81          0x20,0x24,0x24,0xA4,0xFE,0xA3,0x22,0x80,0x70,0x00,0xFF,0x00,0x10,0x20,0x60,0x00,
+  82          0x10,0x08,0x06,0x01,0xFF,0x00,0x81,0x80,0x40,0x20,0x17,0x08,0x04,0x03,0x00,0x00,//秒，11
+  83          
+  84          0x00,0x06,0x09,0x09,0xE6,0x10,0x08,0x08,0x08,0x08,0x18,0x30,0x78,0x00,0x00,0x00,
+  85          0x00,0x00,0x00,0x00,0x1F,0x20,0x40,0x40,0x40,0x40,0x40,0x20,0x10,0x00,0x00,0x00,//℃，12
+  86          
+  87          0x10,0x60,0x02,0x8C,0x00,0x00,0xFE,0x92,0x92,0x92,0x92,0x92,0xFE,0x00,0x00,0x00,
+  88          0x04,0x04,0x7E,0x01,0x40,0x7E,0x42,0x42,0x7E,0x42,0x7E,0x42,0x42,0x7E,0x40,0x00,//温，13
+  89          
+  90          0x10,0x60,0x02,0x8C,0x00,0xFE,0x92,0x92,0x92,0x92,0x92,0x92,0xFE,0x00,0x00,0x00,
+  91          0x04,0x04,0x7E,0x01,0x44,0x48,0x50,0x7F,0x40,0x40,0x7F,0x50,0x48,0x44,0x40,0x00,//湿，14
+  92          
+  93          0x00,0x00,0xFC,0x24,0x24,0x24,0xFC,0x25,0x26,0x24,0xFC,0x24,0x24,0x24,0x04,0x00,
+  94          0x40,0x30,0x8F,0x80,0x84,0x4C,0x55,0x25,0x25,0x25,0x55,0x4C,0x80,0x80,0x80,0x00,//度，15
+  95          
+  96          0x00,0x00,0x38,0x44,0x44,0x44,0x38,0x00,0x80,0x40,0x20,0x10,0x08,0x04,0x00,0x00,
+  97          0x00,0x00,0x20,0x10,0x08,0x04,0x02,0x01,0x38,0x44,0x44,0x44,0x38,0x00,0x00,0x00,//%,16
+  98          
+  99          0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0x20,0x20,0x20,0x30,0x20,0x00,0x00,0x00,
+ 100          0x40,0x40,0x40,0x40,0x40,0x40,0x40,0x7F,0x40,0x40,0x40,0x40,0x40,0x60,0x40,0x00,//上,17
+ 101          
+ 102          0x02,0x02,0x02,0x02,0x02,0x02,0xFE,0x02,0x22,0x42,0x82,0x82,0x02,0x03,0x02,0x00,
+ 103          0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,//下,18
+ 104          
+ 105          0x00,0xFE,0x02,0x22,0xDA,0x06,0x00,0xFE,0x92,0x92,0x92,0x92,0xFF,0x02,0x00,0x00,
+ 106          0x00,0xFF,0x08,0x10,0x08,0x07,0x00,0xFF,0x42,0x24,0x08,0x14,0x22,0x61,0x20,0x00,//限,19
+ 107          
+ 108          0x00,0x00,0x00,0x00,0x00,0xC0,0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 109          0x00,0x00,0x00,0x00,0x00,0x30,0x30,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,//:,20
+ 110          };
+ 111          uchar code TAB_WEEK[]={
+ 112          //日一二三四五六
+ 113          0x00,0x00,0x00,0xFE,0x82,0x82,0x82,0x82,0x82,0x82,0x82,0xFF,0x02,0x00,0x00,0x00,
+ 114          0x00,0x00,0x00,0x7F,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x7F,0x00,0x00,0x00,0x00,//日，0
+ 115          
+ 116          0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0xC0,0x80,0x00,
+ 117          0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,//一，1
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 3   
+
+ 118          
+ 119          0x00,0x00,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x0C,0x08,0x00,0x00,0x00,
+ 120          0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x18,0x10,0x00,//二，2
+ 121          
+ 122          0x00,0x04,0x84,0x84,0x84,0x84,0x84,0x84,0x84,0x84,0x84,0xC4,0x86,0x04,0x00,0x00,
+ 123          0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x30,0x20,0x00,//三，3
+ 124          
+ 125          0x00,0xFC,0x04,0x04,0x04,0xFC,0x04,0x04,0x04,0xFC,0x04,0x04,0x04,0xFE,0x04,0x00,
+ 126          0x00,0x7F,0x20,0x28,0x24,0x23,0x20,0x20,0x20,0x21,0x22,0x22,0x22,0x7F,0x00,0x00,//四，4
+ 127          
+ 128          0x00,0x04,0x84,0x84,0x84,0x84,0xFC,0x84,0x84,0x84,0x84,0xC4,0x86,0x84,0x00,0x00,
+ 129          0x40,0x40,0x40,0x40,0x78,0x47,0x40,0x40,0x40,0x40,0x40,0x7F,0x40,0x60,0x40,0x00,//五，5
+ 130          
+ 131          0x20,0x20,0x20,0x20,0x20,0x22,0x2C,0x38,0x20,0x20,0x20,0x20,0x20,0x30,0x20,0x00,
+ 132          0x00,0x40,0x20,0x18,0x06,0x03,0x00,0x00,0x00,0x01,0x02,0x0C,0x38,0x70,0x00,0x00,//六，6
+ 133          };
+ 134          uchar code TAB_8X16[]={
+ 135          //8X16点阵数字字符 
+ 136          0x00,0xF0,0x08,0x04,0x04,0x04,0x08,0xF0,0x00,0x0F,0x10,0x20,0x20,0x20,0x10,0x0F,//0,0
+ 137          0x00,0x00,0x08,0x08,0xFC,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x3F,0x00,0x00,0x00,//1,1
+ 138          0x00,0x18,0x04,0x04,0x04,0x84,0x78,0x00,0x00,0x38,0x24,0x22,0x21,0x20,0x20,0x00,//2,2
+ 139          0x00,0x18,0x84,0x84,0x84,0x84,0x78,0x00,0x00,0x18,0x20,0x20,0x20,0x20,0x1F,0x00,//3,3
+ 140          0x00,0x00,0x00,0xC0,0x30,0x0C,0xFC,0x00,0x00,0x04,0x07,0x04,0x04,0x04,0x3F,0x04,//4,4
+ 141          0x00,0xFC,0x44,0x44,0x44,0x44,0x84,0x00,0x00,0x18,0x20,0x20,0x20,0x20,0x1F,0x00,//5,5
+ 142          0x00,0xF8,0x84,0x84,0x84,0x84,0x18,0x00,0x00,0x1F,0x20,0x20,0x20,0x20,0x1F,0x00,//6,6
+ 143          0x00,0x04,0x04,0x04,0xC4,0x34,0x0C,0x00,0x00,0x00,0x00,0x3E,0x01,0x00,0x00,0x00,//7,7
+ 144          0x00,0x78,0x84,0x84,0x84,0x84,0x78,0x00,0x00,0x1F,0x20,0x20,0x20,0x20,0x1F,0x00,//8,8
+ 145          0x00,0xF8,0x04,0x04,0x04,0x04,0xF8,0x00,0x00,0x18,0x21,0x21,0x21,0x21,0x1F,0x00,//9,9
+ 146          0x00,0x38,0x44,0x44,0xB8,0x60,0x18,0x04,0x00,0x20,0x18,0x06,0x1D,0x22,0x22,0x1C,//%,10
+ 147          0x00,0xFC,0x04,0x04,0x04,0x04,0x88,0x70,0x00,0x3F,0x01,0x01,0x01,0x01,0x02,0x3C,//R,11
+ 148          0x00,0xFC,0x80,0x80,0x80,0x80,0x80,0xFC,0x00,0x3F,0x00,0x00,0x00,0x00,0x00,0x3F,//H,12
+ 149          0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x30,0x00,0x00,0x00,//.,13
+ 150          0x00,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,//-,14
+ 151          0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x33,0x33,0x00,0x00,0x00,0x00,//:,15
+ 152          };
+ 153          void Delay_MS(uchar ms) //MS延时函数
+ 154          {       
+ 155   1        uchar i;
+ 156   1        while(ms--)
+ 157   1        {
+ 158   2          for(i=0;i<250;i++)
+ 159   2          {
+ 160   3            _nop_();_nop_();_nop_();_nop_();
+ 161   3          }
+ 162   2        }
+ 163   1      }
+ 164          void Bi(ulong t)    //蜂鸣器响函数
+ 165          {
+ 166   1        ulong c;
+ 167   1        uint n;
+ 168   1        for(c=0;c<t;c++)
+ 169   1        {
+ 170   2          for(n=0;n<50;n++);  //延时
+ 171   2          SPK=~SPK;       //取反输出到喇叭的信号
+ 172   2        }
+ 173   1      }
+ 174          void Lcd_Scan_Busy()  //LCD查忙函数
+ 175          {
+ 176   1        LCD_RW=1;
+ 177   1        LCD_RS=0;
+ 178   1      }
+ 179          void Lcd_W_Com(uchar com)   //LCD写指令函数
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 4   
+
+ 180          {
+ 181   1        Lcd_Scan_Busy();  
+ 182   1        LCD_RW=0;
+ 183   1        LCD_RS=0;
+ 184   1        LCD_DATA=com;
+ 185   1        LCD_E=1;
+ 186   1        LCD_E=0;
+ 187   1      }
+ 188          void Lcd_W_Dat(uchar dat) //LCD写数据函数
+ 189          {
+ 190   1        Lcd_Scan_Busy();  
+ 191   1        LCD_RW=0;
+ 192   1        LCD_RS=1;
+ 193   1        if(!Reverse_Display)     //根据Reverse_Display决定是否反相显示
+ 194   1          LCD_DATA=dat;
+ 195   1        else 
+ 196   1          LCD_DATA=~dat;
+ 197   1        LCD_E=1;
+ 198   1        LCD_E=0;
+ 199   1      }
+ 200          void Lcd_Set_Line(uchar Line)   //设置行地址(页面)0-7
+ 201          {
+ 202   1        Line=Line & 0x07;           //0<=line<=7
+ 203   1        Line=Line | 0xb8;           //1011 1xxx
+ 204   1        Lcd_W_Com(Line);          //向LCD发送命令
+ 205   1      }
+ 206          void Lcd_Select_Screen(uchar screen)  //选择屏幕函数  
+ 207          { 
+ 208   1        switch(screen)
+ 209   1        {   
+ 210   2          case 0:
+ 211   2            LCD_CS1=1;
+ 212   2            LCD_CS2=0;
+ 213   2            break;     //左屏
+ 214   2            case 1: 
+ 215   2            LCD_CS1=0;
+ 216   2            LCD_CS2=1;
+ 217   2            break;     //右屏
+ 218   2        }
+ 219   1      }
+ 220          void Lcd_Clr_Scr(uchar screen)  //清屏函数,=0是左屏，=1是右屏
+ 221          { 
+ 222   1        uchar i,j;
+ 223   1        Lcd_Select_Screen(screen);
+ 224   1        for(i=0;i<8;i++) 
+ 225   1        { 
+ 226   2          Lcd_Set_Line(i); 
+ 227   2          for(j=0;j<64;j++) 
+ 228   2          { 
+ 229   3            Lcd_W_Dat(0x00); 
+ 230   3          } 
+ 231   2        } 
+ 232   1      }
+ 233          void Lcd_Init() //LCD初始化函数
+ 234          {
+ 235   1          LCD_CS1=1;
+ 236   1          LCD_CS2=1;
+ 237   1        Lcd_Clr_Scr(0);
+ 238   1        Lcd_Clr_Scr(1);
+ 239   1          Lcd_W_Com(0x38);
+ 240   1        Delay_MS(10);
+ 241   1          Lcd_W_Com(0x0F);
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 5   
+
+ 242   1        Delay_MS(10);
+ 243   1          Lcd_W_Com(0x06);
+ 244   1        Delay_MS(10);
+ 245   1          Lcd_W_Com(0x01);
+ 246   1        Delay_MS(10);
+ 247   1      }
+ 248          //从第P页第L列显示W个字节数据，具体显示的数据在r所指的数组中
+ 249          void Lcd_Show(uchar P,uchar L,uchar W,uchar *r) reentrant   //液晶显示函数
+ 250          {  
+ 251   1          uchar i;
+ 252   1        TR0=0;
+ 253   1        if(L<64)
+ 254   1        {
+ 255   2          LCD_CS1=1;
+ 256   2          LCD_CS2=0;
+ 257   2          Lcd_W_Com(LCD_PAGE+P);
+ 258   2          Lcd_W_Com(LCD_COL+L);
+ 259   2          if(L+W<64)
+ 260   2          { 
+ 261   3            for(i=0;i<W;i++)
+ 262   3              Lcd_W_Dat(r[i]);
+ 263   3          }
+ 264   2          else
+ 265   2          {
+ 266   3            for(i=0;i<64-L;i++)
+ 267   3              Lcd_W_Dat(r[i]);
+ 268   3            LCD_CS1=0;
+ 269   3            LCD_CS2=1;
+ 270   3            Lcd_W_Com(LCD_PAGE+P);
+ 271   3            Lcd_W_Com(LCD_COL);
+ 272   3            for(i=64-L;i<W;i++)
+ 273   3              Lcd_W_Dat(r[i]);
+ 274   3          }
+ 275   2        }
+ 276   1        else
+ 277   1        {
+ 278   2          LCD_CS1=0;
+ 279   2          LCD_CS2=1;
+ 280   2          Lcd_W_Com(LCD_PAGE+P);
+ 281   2          Lcd_W_Com(LCD_COL+L-64);
+ 282   2          for(i=0;i<W;i++)
+ 283   2            Lcd_W_Dat(r[i]);
+ 284   2        }   
+ 285   1        TR0=1;
+ 286   1      }
+ 287          void Lcd_Show_8X16(uchar P1,uchar L1,uchar *M) reentrant  //显示8X16点阵字符
+ 288          {
+ 289   1         Lcd_Show(P1,L1,8,M);
+ 290   1         Lcd_Show(P1+1,L1,8,M+8); 
+ 291   1      }
+ 292          //汉字上半部分与下半部分分别处在相邻两页中
+ 293          void Lcd_Show_16X16(uchar P2,uchar L2,uchar *M) reentrant  //显示16X16点阵字符
+ 294          {                      
+ 295   1         Lcd_Show(P2,L2,16,M); 
+ 296   1         Lcd_Show(P2+1,L2,16,M+16); 
+ 297   1      }
+ 298          void Delay_5US()    //5US延时函数
+ 299          {
+ 300   1        uchar i;
+ 301   1          i--;i--;i--;i--;i--;i--;
+ 302   1      }
+ 303          char DHT_Receive()  //接收信号
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 6   
+
+ 304          {    
+ 305   1        uchar i;
+ 306   1        com_data=0;
+ 307   1        for(i=0;i<=7;i++)    
+ 308   1        {
+ 309   2          respond=2;
+ 310   2          while((!DHT)&&respond++);
+ 311   2          Delay_5US();
+ 312   2          Delay_5US();
+ 313   2          Delay_5US();
+ 314   2          if(DHT)
+ 315   2          {
+ 316   3            temp=1;
+ 317   3            respond=2;
+ 318   3            while((DHT)&&respond++); 
+ 319   3          } 
+ 320   2          else
+ 321   2            temp=0;
+ 322   2          com_data<<=1;
+ 323   2          com_data|=temp;    
+ 324   2        }
+ 325   1        return(com_data);  
+ 326   1      }
+ 327          //湿度读取子程序 
+ 328          //温度高8位== TL_data
+ 329          //温度低8位== TH_data
+ 330          //湿度高8位== RH_data
+ 331          //湿度低8位== RH_data
+ 332          //校验 8位 == CK_data
+ 333          //调用的程序有 delay();, Delay_5us();,DHT_Receive(); 
+ 334          void DHT_Read() //读取数据
+ 335          {
+ 336   1        //主机拉低18ms 
+ 337   1        DHT=0;
+ 338   1        Delay_MS(18);
+ 339   1        DHT=1;
+ 340   1        //DATA总线由上拉电阻拉高 主机延时20us
+ 341   1        Delay_5US();
+ 342   1        Delay_5US();
+ 343   1        Delay_5US();
+ 344   1        Delay_5US();
+ 345   1        
+ 346   1        //主机设为输入 判断从机响应信号 
+ 347   1        DHT=1;
+ 348   1        //判断DHT11是否有低电平响应信号 如不响应则跳出，响应则向下运行   
+ 349   1        if(!DHT)   
+ 350   1        {
+ 351   2          respond=2;
+ 352   2          //判断DHT11发出 80us 的低电平响应信号是否结束 
+ 353   2          while((!DHT)&& respond++);
+ 354   2          respond=2;
+ 355   2          //判断从机是否发出 80us 的高电平，如发出则进入数据接收状态
+ 356   2          while(DHT && respond++);
+ 357   2          //数据接收状态   
+ 358   2          RH_temp = DHT_Receive(); 
+ 359   2          RL_temp = DHT_Receive(); 
+ 360   2          TH_temp = DHT_Receive(); 
+ 361   2          TL_temp = DHT_Receive(); 
+ 362   2          CK_temp = DHT_Receive();
+ 363   2          DHT=1;   
+ 364   2          //数据校验 
+ 365   2          untemp=(RH_temp+RL_temp+TH_temp+TL_temp);
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 7   
+
+ 366   2          if(untemp==CK_temp)
+ 367   2          {
+ 368   3            RH_data = RH_temp;
+ 369   3            RL_data = RL_temp;
+ 370   3            TH_data = TH_temp; 
+ 371   3            TL_data = TL_temp;
+ 372   3            CK_data = CK_temp;
+ 373   3          }
+ 374   2        }
+ 375   1        s1 = (char)(RH_data/10);
+ 376   1        s2 = (char)(RH_data%10);
+ 377   1        w1 = (char)(TH_data/10);
+ 378   1        w2 = (char)(TH_data%10);
+ 379   1      }
+ 380          void DS_Write_Byte(uchar X)    //向DS1302写入一个字节
+ 381          {
+ 382   1        uchar i;
+ 383   1        for(i=0;i<8;i++)
+ 384   1        {
+ 385   2            DIO=X&1;
+ 386   2          DCLK=1;
+ 387   2          DCLK=0;
+ 388   2          X>>=1;
+ 389   2        }
+ 390   1      }
+ 391          uchar DS_Read_Byte()    //从DS1302中读取一个字节
+ 392          {
+ 393   1        uchar i,byte,t;
+ 394   1          for(i=0;i<8;i++)
+ 395   1          {
+ 396   2          byte>>=1;
+ 397   2          t=DIO;
+ 398   2            byte|=t<<7;
+ 399   2            DCLK=1;
+ 400   2            DCLK=0;
+ 401   2        }
+ 402   1        //BCD码转换
+ 403   1        return byte/16*10+byte%16;
+ 404   1      }
+ 405          uchar DS_Read_Dat(uchar addr)  //从DS1302指定位置读取数据
+ 406          {
+ 407   1        uchar dat;
+ 408   1        DRST=0;
+ 409   1        DCLK=0;
+ 410   1        DRST=1;
+ 411   1        DS_Write_Byte(addr);  //向DS1302写入一个地址
+ 412   1        dat=DS_Read_Byte(); //在上面写入的地址中读取数据
+ 413   1        DCLK=1;
+ 414   1        DRST=0;
+ 415   1        return dat;
+ 416   1      }
+ 417          void DS_Write_Dat(uchar addr,uchar dat)  //向DS1302指定位置写入数据, 写数据
+ 418          {
+ 419   1        DCLK=0;
+ 420   1        DRST=1;
+ 421   1        DS_Write_Byte(addr);
+ 422   1        DS_Write_Byte(dat);
+ 423   1        DCLK=1;
+ 424   1        DRST=0;
+ 425   1      }
+ 426          void DS_Set_Time()    //设置时间
+ 427          {
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 8   
+
+ 428   1          uchar i;
+ 429   1          DS_Write_Dat(0x8E,0x00); //写控制字，取消写保护
+ 430   1          // 分，时，日，月，年依次写入
+ 431   1          for(i=0;i<7;i++)
+ 432   1          {
+ 433   2          //分的起始地址是10000010(0x82)，后面依次是时，日，月，周，年，写入地址每次递增2
+ 434   2            DS_Write_Dat(0x80+2*i,(DateTime[i]/10<<4)|(DateTime[i]%10));
+ 435   2        }
+ 436   1          DS_Write_Dat(0x8E,0x80); //写控制字，加写保护
+ 437   1      }
+ 438          void DS_Get_Time()      //读取当前时间
+ 439          {
+ 440   1        uchar i;
+ 441   1          for(i=0;i<7;i++)
+ 442   1          {
+ 443   2          DateTime[i]=DS_Read_Dat(0x81+2*i);
+ 444   2        }
+ 445   1      }
+ 446          uchar Is_Leapyear(uint year) //判断是否为闰年
+ 447          {
+ 448   1        return (year%4==0&&year%100!=0)||(year%400==0) ;
+ 449   1      }
+ 450          //计算自2000.1.1开始的任何一天是星期几？
+ 451          void Refresh_Week_Day() //计算星期
+ 452          {
+ 453   1        uint i,d,w=5;  //已知1999年12.31是星期五
+ 454   1        for(i=2000;i<2000+DateTime[6];i++)
+ 455   1          {
+ 456   2            d=Is_Leapyear(i)?366:365;
+ 457   2          w=(w+d)%7;
+ 458   2        }
+ 459   1        d=0;
+ 460   1        for (i=1;i<DateTime[4];i++)
+ 461   1        {
+ 462   2          d+=MonthsDays[i];
+ 463   2        }
+ 464   1        d+=DateTime[3];//保存星期，0-6表示星期日，星期一至星期六，为了与DS1302的星期格式匹配，返回值需要加1
+ 465   1        DateTime[5]=(w+d)%7+1;
+ 466   1      }
+ 467          void Date_Time_Adjust(char X)   //年，月，日和时，分++/--
+ 468          {
+ 469   1        switch(Adjust_Index)
+ 470   1          { 
+ 471   2          case 10:  //温度下限调整
+ 472   2            if(X==1&&TempL<TempH) //不高于上限，加
+ 473   2              TempL++;
+ 474   2            if(X==-1&&TempL>0)      //不小于0，减
+ 475   2              TempL--;
+ 476   2            break;
+ 477   2          case 9:   //温度上限调整
+ 478   2            if(X==1&&TempH<50)    //不高于50，加
+ 479   2              TempH++;
+ 480   2            if(X==-1&&TempH>TempL)  //不大于下限，减
+ 481   2              TempH--;
+ 482   2            break;
+ 483   2          case 8: //湿度下限调整
+ 484   2            if(X==1&&HumiL<HumiH) //不高于上限，加
+ 485   2              HumiL++;
+ 486   2            if(X==-1&&HumiL>20)     //不小于20，减
+ 487   2              HumiL--;
+ 488   2            break;
+ 489   2          case 7:   //湿度上限调整
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 9   
+
+ 490   2            if(X==1&&HumiH<90)    //不高于90，加
+ 491   2              HumiH++;
+ 492   2            if(X==-1&&HumiH>HumiL)  //不大于下限，减
+ 493   2              HumiH--;
+ 494   2            break;
+ 495   2      
+ 496   2          case 6:  //年调整，00-99
+ 497   2            if(X==1&&DateTime[6]<99)
+ 498   2            { 
+ 499   3              DateTime[6]++;
+ 500   3            }
+ 501   2            if(X==-1&&DateTime[6]>0)
+ 502   2            { 
+ 503   3              DateTime[6]--;
+ 504   3            }
+ 505   2            //获取2月天数
+ 506   2            MonthsDays[2]=Is_Leapyear(2000+DateTime[6])?29:28;
+ 507   2            //如果年份变化后当前月份的天数大于上限则设为上限
+ 508   2            if(DateTime[3]>MonthsDays[DateTime[4]])
+ 509   2            {
+ 510   3              DateTime[3]=MonthsDays[DateTime[4]];
+ 511   3            }
+ 512   2            Refresh_Week_Day();  //刷新星期
+ 513   2            break;
+ 514   2           case 4:  //月调整 01-12
+ 515   2              if(X==1&&DateTime[4]<12)
+ 516   2            { 
+ 517   3              DateTime[4]++;
+ 518   3            }
+ 519   2            if(X==-1&&DateTime[4]>1)
+ 520   2            { 
+ 521   3              DateTime[4]--;
+ 522   3            }
+ 523   2            //获取2月天数
+ 524   2            MonthsDays[2]=Is_Leapyear(2000+DateTime[6])?29:28;
+ 525   2            //如果年份变化后当前月份的天数大于上限则设为上限
+ 526   2            if(DateTime[3]>MonthsDays[DateTime[4]])
+ 527   2            {
+ 528   3              DateTime[3]=MonthsDays[DateTime[4]];
+ 529   3            }
+ 530   2            Refresh_Week_Day();  //刷新星期
+ 531   2            break;
+ 532   2           case 3:   //  日调整00-28或00-29或00-30或00-31
+ 533   2                    //调节之前首先根据当前年份得出该年中2月的天数
+ 534   2            MonthsDays[2]=Is_Leapyear(2000+DateTime[6])?29:28;
+ 535   2            //根据当前月份决定调节日期的上限
+ 536   2            if(X==1&&DateTime[3]<MonthsDays[DateTime[4]])
+ 537   2            { 
+ 538   3              DateTime[3]++;
+ 539   3            }
+ 540   2            if(X==-1&&DateTime[3]>1)
+ 541   2            { 
+ 542   3              DateTime[3]--;
+ 543   3            }
+ 544   2            Refresh_Week_Day();  //刷新星期
+ 545   2                break;
+ 546   2           case 2:    //时调整
+ 547   2            if(X==1&&DateTime[2]<23)
+ 548   2            { 
+ 549   3              DateTime[2]++;
+ 550   3            }
+ 551   2            if(X==-1&&DateTime[2]>0)
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 10  
+
+ 552   2            { 
+ 553   3              DateTime[2]--;
+ 554   3            }
+ 555   2                break;
+ 556   2           case 1:    //  分调整
+ 557   2            if(X==1&&DateTime[1]<59)
+ 558   2            { 
+ 559   3              DateTime[1]++;
+ 560   3            }
+ 561   2            if(X==-1&&DateTime[1]>0)
+ 562   2            { 
+ 563   3              DateTime[1]--;
+ 564   3            }
+ 565   2                break;
+ 566   2          case 0:   // 秒调整
+ 567   2            if(X==1&&DateTime[0]<59)
+ 568   2            { 
+ 569   3              DateTime[0]++;
+ 570   3            }
+ 571   2            if(X==-1&&DateTime[0]>0)
+ 572   2            { 
+ 573   3              DateTime[0]--;
+ 574   3            }
+ 575   2                break;
+ 576   2        }
+ 577   1      }
+ 578          void Timer_Init() //定时器初始化
+ 579          {
+ 580   1        IE=0x83;
+ 581   1        IP=0x01;
+ 582   1        IT0=0X01;
+ 583   1        TH0=(65536-50000)/256;  //定时器赋初值
+ 584   1        TL0=(65536-50000)%256;
+ 585   1        TR0=1;    //定时器0启动
+ 586   1      }
+ 587          
+ 588          
+ 589          
+ 590          void System_Init()  //系统初始化函数
+ 591          {
+ 592   1        Lcd_Init();   //液晶初始化函数
+ 593   1        Timer_Init(); //定时器初始化
+ 594   1        InitUART();
+ 595   1        
+ 596   1        
+ 597   1        Lcd_Show_8X16(0,0+0,TAB_8X16+2*16);//显示2
+ 598   1        Lcd_Show_8X16(0,8+0,TAB_8X16);     //显示0
+ 599   1      
+ 600   1        Lcd_Show_8X16(0,32+0,TAB_8X16+14*16);    //-
+ 601   1        Lcd_Show_8X16(0,56+0,TAB_8X16+14*16);    //-
+ 602   1        Lcd_Show_16X16(0,80+0,TAB_16X16+1*32);  //星
+ 603   1        Lcd_Show_16X16(0,96+0,TAB_16X16+0*32);  //期
+ 604   1      
+ 605   1        Lcd_Show_16X16(4,0,TAB_16X16+13*32);    //温度
+ 606   1        Lcd_Show_16X16(4,16,TAB_16X16+15*32);
+ 607   1        Lcd_Show_16X16(4,32,TAB_16X16+20*32);   //冒号    
+ 608   1        Lcd_Show_16X16(4,64,TAB_16X16+12*32);   //℃
+ 609   1        
+ 610   1        Lcd_Show_16X16(6,0,TAB_16X16+14*32);    //湿度
+ 611   1        Lcd_Show_16X16(6,16,TAB_16X16+15*32);
+ 612   1        Lcd_Show_16X16(6,32,TAB_16X16+20*32);   //冒号  
+ 613   1        Lcd_Show_16X16(6,64,TAB_16X16+16*32);   //%
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 11  
+
+ 614   1      }
+ 615          
+ 616          void delay1s(void)
+ 617          {
+ 618   1      unsigned char h,i,j,k;
+ 619   1      for(h=5;h>0;h--)
+ 620   1      for(i=4;i>0;i--)
+ 621   1      for(j=116;j>0;j--)
+ 622   1      for(k=214;k>0;k--);
+ 623   1      } //延时1min
+ 624          void main() //主函数
+ 625          {
+ 626   1          System_Init();  //系统初始化函数
+ 627   1        while(1)
+ 628   1        {
+ 629   2          DHT_Read(); //获取温湿度
+ 630   2          if(Adjust_Index==-1) 
+ 631   2          {
+ 632   3            DS_Get_Time();  //获取日期时间信息
+ 633   3            Lcd_Show_16X16(2,64+0,TAB_16X16+3*32);  //空
+ 634   3            Lcd_Show_16X16(2,80+0,TAB_16X16+3*32); //空
+ 635   3            Lcd_Show_16X16(2,96+0,TAB_16X16+3*32); //空
+ 636   3            Lcd_Show_16X16(2,112+0,TAB_16X16+3*32); //空
+ 637   3            
+ 638   3            if((RH_data>HumiH)||(RH_data<HumiL)||(TH_data>TempH)||(TH_data<TempL))  //超范围声光报警
+ 639   3            {
+ 640   4              LED=0;  //声光报警
+ 641   4              Bi(50);
+ 642   4            }
+ 643   3            else      //正常范围
+ 644   3            {
+ 645   4              LED=1;  //声光不报警
+ 646   4              SPK=1;
+ 647   4            }
+ 648   3            if(TH_data>TempH) //温度高于上限；温度>35
+ 649   3              JDQ1=0;     //继电器1闭合；风扇打开
+ 650   3            else
+ 651   3              JDQ1=1;     //继电器1断开；风扇关闭
+ 652   3            if(TH_data<TempL)   //温度低于下限; 温度< 15
+ 653   3              JDQ2=0;     //继电器2闭合 ; 取暖器打开
+ 654   3            else
+ 655   3              JDQ2=1;     //继电器2断开； 取暖器关闭
+ 656   3            if(RH_data>HumiH)   //湿度高于上限 ；湿度>80
+ 657   3              JDQ3=0;     //继电器3闭合  除湿机打开
+ 658   3            else
+ 659   3              JDQ3=1;     //继电器3断开  除湿机关闭
+ 660   3            if(RH_data<HumiL)   //湿度低于下限 ；湿度< 50
+ 661   3              JDQ4=0;       //继电器4闭合  ；抽水泵打开     
+ 662   3            else if(TH_data>TempH)  //温度高于上限；温度>35
+ 663   3              JDQ4=0;     //继电器1闭合；风扇打开     
+ 664   3            else
+ 665   3              JDQ4=1;     //继电器4断开；浇水关闭
+ 666   3            if(JDQ4==0)
+ 667   3              delay1s();
+ 668   3              JDQ4=1;
+ 669   3              delay1s();//延时1s
+ 670   3          }
+ 671   2          else
+ 672   2          {
+ 673   3            if((Adjust_Index==10)||(Adjust_Index==9)) //温度
+ 674   3            {
+ 675   4              Lcd_Show_16X16(2,64+0,TAB_16X16+13*32);  //温度
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 12  
+
+ 676   4              Lcd_Show_16X16(2,80+0,TAB_16X16+15*32); 
+ 677   4            } 
+ 678   3            else if((Adjust_Index==8)||(Adjust_Index==7)) //湿度
+ 679   3            {
+ 680   4              Lcd_Show_16X16(2,64+0,TAB_16X16+14*32);   //湿度
+ 681   4              Lcd_Show_16X16(2,80+0,TAB_16X16+15*32); 
+ 682   4            }
+ 683   3            else
+ 684   3            {
+ 685   4              Lcd_Show_16X16(2,64+0,TAB_16X16+4*32);  //设
+ 686   4              Lcd_Show_16X16(2,80+0,TAB_16X16+5*32);  //置
+ 687   4              Lcd_Show_16X16(2,112+0,TAB_16X16+3*32); //空
+ 688   4            }
+ 689   3      
+ 690   3            if((Adjust_Index==10)||(Adjust_Index==8))   //下限
+ 691   3            {
+ 692   4              Lcd_Show_16X16(2,96+0,TAB_16X16+18*32);   //下
+ 693   4              Lcd_Show_16X16(2,112+0,TAB_16X16+19*32);  //限
+ 694   4            }
+ 695   3            else if((Adjust_Index==9)||(Adjust_Index==7)) //上限
+ 696   3            {
+ 697   4              Lcd_Show_16X16(2,96+0,TAB_16X16+17*32);   //上
+ 698   4              Lcd_Show_16X16(2,112+0,TAB_16X16+19*32);  //限
+ 699   4            }
+ 700   3            else if(Adjust_Index==6)  //年
+ 701   3              Lcd_Show_16X16(2,96+0,TAB_16X16+6*32); //年
+ 702   3            else if(Adjust_Index==4)  //月
+ 703   3              Lcd_Show_16X16(2,96+0,TAB_16X16+7*32); //月
+ 704   3            else if(Adjust_Index==3)  //日
+ 705   3              Lcd_Show_16X16(2,96+0,TAB_16X16+8*32); //日
+ 706   3            else if(Adjust_Index==2)  //时
+ 707   3              Lcd_Show_16X16(2,96+0,TAB_16X16+9*32); //时
+ 708   3            else if(Adjust_Index==1)  //分
+ 709   3              Lcd_Show_16X16(2,96+0,TAB_16X16+10*32); //分
+ 710   3            else if(Adjust_Index==0)  //秒
+ 711   3              Lcd_Show_16X16(2,96+0,TAB_16X16+11*32); //秒  
+ 712   3          } 
+ 713   2          Lcd_Show_8X16(0,16+0,TAB_8X16+DateTime[6]/10*16); //年后两位
+ 714   2          Lcd_Show_8X16(0,24+0,TAB_8X16+DateTime[6]%10*16);
+ 715   2      
+ 716   2          Lcd_Show_8X16(0,40+0,TAB_8X16+DateTime[4]/10*16); //月
+ 717   2          Lcd_Show_8X16(0,48+0,TAB_8X16+DateTime[4]%10*16);
+ 718   2        
+ 719   2          Lcd_Show_8X16(0,64+0,TAB_8X16+DateTime[3]/10*16); //日
+ 720   2          Lcd_Show_8X16(0,72+0,TAB_8X16+DateTime[3]%10*16);
+ 721   2      
+ 722   2          Lcd_Show_16X16(0,112+0,TAB_WEEK+(DateTime[5]%10-1)*32); //星期
+ 723   2      
+ 724   2          Lcd_Show_8X16(2,0+0,TAB_8X16+DateTime[2]/10*16);  //时
+ 725   2          Lcd_Show_8X16(2,8+0,TAB_8X16+DateTime[2]%10*16);    
+ 726   2          Lcd_Show_8X16(2,16+0,TAB_8X16+15*16); //冒号    
+ 727   2          Lcd_Show_8X16(2,24+0,TAB_8X16+DateTime[1]/10*16); //分
+ 728   2          Lcd_Show_8X16(2,32+0,TAB_8X16+DateTime[1]%10*16);
+ 729   2          Lcd_Show_8X16(2,40+0,TAB_8X16+15*16); //冒号        
+ 730   2      
+ 731   2          Lcd_Show_8X16(4,48,TAB_8X16+w1*16);
+ 732   2          Lcd_Show_8X16(4,56,TAB_8X16+w2*16);   //温度
+ 733   2          
+ 734   2          Lcd_Show_8X16(6,48,TAB_8X16+s1*16);
+ 735   2          Lcd_Show_8X16(6,56,TAB_8X16+s2*16);   //湿度
+ 736   2      
+ 737   2          Lcd_Show_8X16(4,88,TAB_8X16+TempL/10*16);
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 13  
+
+ 738   2          Lcd_Show_8X16(4,96,TAB_8X16+TempL%10*16);   //温度下限
+ 739   2          Lcd_Show_8X16(4,104,TAB_8X16+14*16);        //-
+ 740   2          Lcd_Show_8X16(4,112,TAB_8X16+TempH/10*16);
+ 741   2          Lcd_Show_8X16(4,120,TAB_8X16+TempH%10*16);    //温度上限
+ 742   2      
+ 743   2          Lcd_Show_8X16(6,88,TAB_8X16+HumiL/10*16);
+ 744   2          Lcd_Show_8X16(6,96,TAB_8X16+HumiL%10*16);   //湿度下限
+ 745   2          Lcd_Show_8X16(6,104,TAB_8X16+14*16);        //-
+ 746   2          Lcd_Show_8X16(6,112,TAB_8X16+HumiH/10*16);
+ 747   2          Lcd_Show_8X16(6,120,TAB_8X16+HumiH%10*16);    //湿度上限
+ 748   2        }
+ 749   1      }
+ 750          void EXIT0()interrupt 0   //外部中断0中断处理函数，用于键盘
+ 751          {
+ 752   1        if(KEY_SET==0)
+ 753   1        {
+ 754   2          if(Adjust_Index==-1||Adjust_Index==0)
+ 755   2          {
+ 756   3            Adjust_Index=11;
+ 757   3          }
+ 758   2          Adjust_Index--;
+ 759   2          if(Adjust_Index==5)
+ 760   2          {
+ 761   3            Adjust_Index=4;
+ 762   3          }  //跳过对星期的调节
+ 763   2        }
+ 764   1          else if(KEY_JIA==0)      //加
+ 765   1        {
+ 766   2          Date_Time_Adjust(1);
+ 767   2        }
+ 768   1          else if(KEY_JIAN==0)      //减
+ 769   1        {
+ 770   2          Date_Time_Adjust(-1);
+ 771   2        }
+ 772   1          else if(KEY_OUT==0)
+ 773   1        {
+ 774   2          DS_Set_Time();  //设置日期时间
+ 775   2          Adjust_Index=-1;  //操作索引重设为-1，时间继续正常显示
+ 776   2        }
+ 777   1      }
+ 778          void Timer0()interrupt 1  //定时器0中断处理函数，用于刷新秒显示
+ 779          {
+ 780   1        TH0=(65536-50000)/256;  //定时器赋初值
+ 781   1        TL0=(65536-50000)%256;
+ 782   1        if(++tcount!=2)
+ 783   1          return;
+ 784   1        tcount=0;
+ 785   1        Lcd_Show_8X16(2,48,TAB_8X16+DateTime[0]/10*16); //秒显示           
+ 786   1        Lcd_Show_8X16(2,56,TAB_8X16+DateTime[0]%10*16);
+ 787   1        
+ 788   1        UART_IDLE();
+ 789   1      }
+ 790          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3314    ----
+   CONSTANT SIZE    =   1152    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     44      13
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.05   MAIN                                                                  09/11/2020 16:06:56 PAGE 14  
+
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

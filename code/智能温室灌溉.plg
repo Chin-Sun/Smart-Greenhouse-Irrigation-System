@@ -1,0 +1,17 @@
+<html>
+<body>
+<pre>
+<h1>礦ision Build Log</h1>
+<h2>Project:</h2>
+C:\仿真C\仿真程序\Lcd12864智能家居.uvproj
+Project File Date:  09/06/2020
+
+<h2>Output:</h2>
+Rebuild target '目标 1'
+assembling STARTUP.A51...
+compiling main.c...
+main.c(168): warning C290: missing return value
+linking...
+Program Size: data=66.1 xdata=0 code=4788
+creating hex file from "Lcd12864智能家居"...
+"Lcd12864智能家居" - 0 Error(s), 1 Warning(s).
